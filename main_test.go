@@ -30,6 +30,10 @@ func TestCmpRead(t *testing.T) {
 	start = time.Now()
 	readWithBuffer(filepath)
 	println("readWithBuffer", time.Since(start).Milliseconds())
+
+	start = time.Now()
+	readWithScanner(filepath)
+	println("readWithScanner", time.Since(start).Milliseconds())
 }
 
 func createTestFile(fileName string) {
