@@ -1,92 +1,38 @@
 package xlg_agent
 
 import (
-	"bufio"
-	"bytes"
-	"math/rand"
 	"os"
-	"path"
 	"testing"
-	"time"
 )
 
-func TestX(t *testing.T) {
-	x := []byte("a\nb\nc")
-	lines := bytes.Split(x, []byte("\n"))
-
-	for _, l := range lines {
-		println(string(l))
+func check(err error) {
+	if err != nil {
+		panic(err)
 	}
 }
 
-func TestCmpRead(t *testing.T) {
+func Test_processFile(t *testing.T) {
 	dir := t.TempDir()
-	filepath := path.Join(dir, "/test.txt")
-	createTestFile(filepath)
-	start := time.Now()
-	readByteByByte(filepath)
-	println("readByteByByte", time.Since(start).Milliseconds())
+	filePath := dir + "/test.log"
+	data := `-{"msg": "test"}
++{"msg": "test2"}
+-{"msg": "test3"}
+`
+	check(os.WriteFile(filePath, []byte(data), 0644))
 
-	start = time.Now()
-	readWithBuffer(filepath)
-	println("readWithBuffer", time.Since(start).Milliseconds())
-
-	start = time.Now()
-	readWithScanner(filepath)
-	println("readWithScanner", time.Since(start).Milliseconds())
-}
-
-func createTestFile(fileName string) {
-	file, err := os.Create(fileName)
-	if err != nil {
-		panic(err)
+	noop := func(_ []byte) error {
+		return nil
 	}
-	defer file.Close()
+	check(processFile(filePath, noop))
 
-	// Set the desired file size (10 megabytes)
-	fileSize := 10 * 1024 * 1024
+	content, err := os.ReadFile(filePath)
+	check(err)
 
-	// Create a random source for generating content
-	rand.Seed(time.Now().UnixNano())
-
-	// Create a buffer writer for improved performance
-	writer := bufio.NewWriter(file)
-
-	// Keep writing lines until the file reaches the desired size
-	for size(file) < int64(fileSize) {
-		// Generate a random line or use any content generation logic you prefer
-		line := generateRandomLine()
-
-		// Write the line to the file
-		_, err := writer.WriteString(line)
-		if err != nil {
-			panic(err)
-		}
+	expected := `+{"msg": "test"}
++{"msg": "test2"}
++{"msg": "test3"}
+`
+	if string(content) != expected {
+		t.Error("unexpected file content")
 	}
-
-	// Flush the writer and ensure all data is written to the file
-	writer.Flush()
-
-}
-
-func generateRandomLine() string {
-	// You can modify this function to generate your desired content for each line
-	// For example, here, we are generating a random line of characters
-	lineLength := 100 // Adjust the desired line length
-	letters := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-
-	line := make([]byte, lineLength)
-	for i := range line {
-		line[i] = letters[rand.Intn(len(letters))]
-	}
-
-	return string(line) + "\n"
-}
-
-func size(f *os.File) int64 {
-	info, err := f.Stat()
-	if err != nil {
-		panic(err)
-	}
-	return info.Size()
 }
