@@ -5,10 +5,16 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"sort"
 	"strings"
 	"time"
+)
+
+var (
+	collectorUrl   = os.Getenv("COLLECTOR_URL")
+	collectorToken = os.Getenv("COLLECTOR_TOKEN")
 )
 
 func main() {
@@ -52,7 +58,21 @@ func main() {
 }
 
 func send(json []byte) error {
-	fmt.Println(string(json))
+	c := http.Client{Timeout: 5 * time.Second}
+	req, err := http.NewRequest(http.MethodPost, collectorUrl, bytes.NewReader(json))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+collectorToken)
+	resp, err := c.Do(req)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
 	return nil
 }
 
