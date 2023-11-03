@@ -23,7 +23,7 @@ func Test_processFile(t *testing.T) {
 	noop := func(_ []byte) error {
 		return nil
 	}
-	check(processFile(filePath, noop))
+	check(process(filePath, noop))
 
 	content, err := os.ReadFile(filePath)
 	check(err)

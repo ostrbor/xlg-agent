@@ -20,40 +20,62 @@ var (
 func main() {
 	// each line in /etc/xlg-agent is a path to a directory with log files
 	//conf, err := os.ReadFile("/etc/xlg-agent.conf")
+
+	// todo print env vars to stdout
+	// todo print config dirs to stdout
 	conf, err := io.ReadAll(os.Stdin)
 	if err != nil {
 		panic(err)
 	}
-
-	dirs := bytes.Split(conf, []byte("\n"))
+	dirs := strings.Split(string(conf), "\n")
 	for _, dir := range dirs {
-		// read content in dir
-		// sort all files
-		// find file to send logs
-		// send logs
-		// update file
-		dirFiles, err := os.ReadDir(string(dir))
-		if err != nil {
-			panic(err)
-		}
-
-		var logFiles []string
-		for _, file := range dirFiles {
-			name := file.Name()
-			if !strings.HasSuffix(name, ".log") {
-				continue
-			}
-			logFiles = append(logFiles, name)
-		}
-		sort.Strings(logFiles)
-
-		for _, file := range logFiles {
-			err = processFile(file, send)
-			if err != nil {
+		if _, err := os.Stat(dir); err != nil {
+			if os.IsNotExist(err) {
+				// todo format err
+				panic(err)
+			} else {
+				// eg permission err
+				// todo format err
 				panic(err)
 			}
 		}
+	}
+
+	for {
+		for _, dir := range dirs {
+			forward(dir)
+		}
 		time.Sleep(5 * time.Second)
+	}
+}
+
+// forward logs from dir to collector
+func forward(dir string) {
+	// read content in dir
+	// sort all files
+	// find file to send logs
+	// send logs
+	// update file
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		panic(err)
+	}
+
+	var logFiles []string
+	for _, file := range files {
+		name := file.Name()
+		if !strings.HasSuffix(name, ".log") {
+			continue
+		}
+		logFiles = append(logFiles, name)
+	}
+	sort.Strings(logFiles)
+
+	for _, file := range logFiles {
+		err = process(file, send)
+		if err != nil {
+			panic(err)
+		}
 	}
 }
 
@@ -76,7 +98,7 @@ func send(json []byte) error {
 	return nil
 }
 
-func processFile(filePath string, processLine func([]byte) error) error {
+func process(filePath string, handleLine func([]byte) error) error {
 	fd, err := os.OpenFile(filePath, os.O_RDWR, os.ModePerm)
 	if err != nil {
 		return err
@@ -88,7 +110,7 @@ func processFile(filePath string, processLine func([]byte) error) error {
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) > 0 && line[0] == '-' {
-			if err := processLine(line); err != nil {
+			if err := handleLine(line); err != nil {
 				return err
 			}
 			// mark line as successfully processed
