@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"sort"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 var (
 	collectorUrl   = os.Getenv("COLLECTOR_URL")
 	collectorToken = os.Getenv("COLLECTOR_TOKEN")
+	cache          = make(map[string]int64)
 )
 
 func main() {
@@ -72,10 +74,13 @@ func forward(dir string) {
 	sort.Strings(logFiles)
 
 	for _, file := range logFiles {
-		err = process(file, send)
+		filepath := path.Join(dir, file)
+		start := cache[filepath]
+		end, err := process(filepath, start, send)
 		if err != nil {
 			panic(err)
 		}
+		cache[filepath] = end
 	}
 }
 
@@ -98,33 +103,38 @@ func send(json []byte) error {
 	return nil
 }
 
-func process(filePath string, handleLine func([]byte) error) error {
+// todo use start offset to compare with file size to avoid reading file
+func process(filePath string, start int64, handleLine func([]byte) error) (offset int64, err error) {
 	fd, err := os.OpenFile(filePath, os.O_RDWR, os.ModePerm)
 	if err != nil {
-		return err
+		return
 	}
 	defer fd.Close()
+	if _, err := fd.Seek(start, io.SeekStart); err != nil {
+		return
+	}
 
 	scanner := bufio.NewScanner(fd)
-	lineStart := 0
+	offset = start
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) > 0 && line[0] == '-' {
 			if err := handleLine(line); err != nil {
-				return err
+				return
 			}
 			// mark line as successfully processed
-			_, err = fd.WriteAt([]byte{'+'}, int64(lineStart))
+			_, err = fd.WriteAt([]byte{'+'}, offset)
 			if err != nil {
-				return err
+				return
 			}
 		}
-		lineStart += len(line) + len(string('\n'))
+		done := len(line) + len(string('\n'))
+		offset += int64(done)
 	}
 
 	if err := scanner.Err(); err != nil {
-		return err
+		return
 	}
 
-	return nil
+	return offset, nil
 }
