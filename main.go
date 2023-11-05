@@ -3,6 +3,7 @@ package xlg_agent
 import (
 	"bufio"
 	"bytes"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,20 +18,36 @@ var (
 	collectorUrl   = os.Getenv("COLLECTOR_URL")
 	collectorToken = os.Getenv("COLLECTOR_TOKEN")
 	cache          = make(map[string]int64)
+	dir            = flag.String("dir", "", "directory for service dirs, containing log files")
 )
 
+// /dir/appDir/logFile
 func main() {
-	// each line in /etc/xlg-agent is a path to a directory with log files
-	//conf, err := os.ReadFile("/etc/xlg-agent.conf")
-
+	flag.Parse()
+	if *dir == "" {
+		panic("dir flag is required")
+	}
+	s, err := os.Stat(*dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// todo format err
+			panic(err)
+		} else {
+			// eg permission err
+			// todo format err
+			panic(err)
+		}
+	}
+	if !s.IsDir() {
+		panic("not a directory")
+	}
 	// todo print env vars to stdout
-	// todo print config dirs to stdout
-	conf, err := io.ReadAll(os.Stdin)
+
+	appDirs, err := os.ReadDir(*dir)
 	if err != nil {
 		panic(err)
 	}
-	dirs := strings.Split(string(conf), "\n")
-	for _, dir := range dirs {
+	for _, dir := range appDirs {
 		if _, err := os.Stat(dir); err != nil {
 			if os.IsNotExist(err) {
 				// todo format err
