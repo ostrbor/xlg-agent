@@ -18,16 +18,16 @@ var (
 	collectorUrl   = os.Getenv("COLLECTOR_URL")
 	collectorToken = os.Getenv("COLLECTOR_TOKEN")
 	cache          = make(map[string]int64)
-	dir            = flag.String("dir", "", "directory for service dirs, containing log files")
+	rootDir        = flag.String("dir", "", "root directory for log subdirectories")
 )
 
-// /dir/appDir/logFile
+// /rootDir/logDir/logFile
 func main() {
 	flag.Parse()
-	if *dir == "" {
+	if *rootDir == "" {
 		panic("dir flag is required")
 	}
-	s, err := os.Stat(*dir)
+	s, err := os.Stat(*rootDir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			// todo format err
@@ -43,34 +43,26 @@ func main() {
 	}
 	// todo print env vars to stdout
 
-	appDirs, err := os.ReadDir(*dir)
+	rootEntries, err := os.ReadDir(*rootDir)
 	if err != nil {
 		panic(err)
 	}
-	for _, dir := range appDirs {
-		if _, err := os.Stat(dir); err != nil {
-			if os.IsNotExist(err) {
-				// todo format err
-				panic(err)
-			} else {
-				// eg permission err
-				// todo format err
-				panic(err)
-			}
-		}
-	}
 
 	for {
-		for _, dir := range dirs {
-			forward(dir)
+		for _, entry := range rootEntries {
+			if !entry.IsDir() {
+				continue
+			}
+			p := path.Join(*rootDir, entry.Name())
+			forward(p)
 		}
 		time.Sleep(5 * time.Second)
 	}
 }
 
-// forward logs from dir to collector
+// forward logs from rootDir to collector
 func forward(dir string) {
-	// read content in dir
+	// read content in rootDir
 	// sort all files
 	// find file to send logs
 	// send logs
