@@ -60,7 +60,7 @@ func main() {
 	}
 }
 
-// forward logs from rootDir to collector
+// forward logs from dirs in rootDir to collector
 func forward(dir string) {
 	// read content in rootDir
 	// sort all files
@@ -118,31 +118,41 @@ func process(filePath string, start int64, handleLine func([]byte) error) (offse
 	if err != nil {
 		return
 	}
-	defer fd.Close()
-	if _, err := fd.Seek(start, io.SeekStart); err != nil {
+	defer func() {
+		if closeErr := fd.Close(); closeErr != nil {
+			// log err
+			panic(closeErr)
+		}
+	}()
+	if _, err = fd.Seek(start, io.SeekStart); err != nil {
 		return
 	}
 
-	scanner := bufio.NewScanner(fd)
+	// prefer bufio.Reader over bufio.Scanner because Scanner returns last line even if it doesn't end with newline.
+	rd := bufio.NewReader(fd)
 	offset = start
-	for scanner.Scan() {
-		line := scanner.Bytes()
+	done := false
+	for !done {
+		line, err := rd.ReadBytes('\n')
+		if err != nil {
+			if err == io.EOF {
+				done = true
+				continue
+			} else {
+				return offset, err
+			}
+		}
 		if len(line) > 0 && line[0] == '-' {
-			if err := handleLine(line); err != nil {
-				return
+			if err = handleLine(line); err != nil {
+				return offset, err
 			}
 			// mark line as successfully processed
 			_, err = fd.WriteAt([]byte{'+'}, offset)
 			if err != nil {
-				return
+				return offset, err
 			}
 		}
-		done := len(line) + len(string('\n'))
-		offset += int64(done)
-	}
-
-	if err := scanner.Err(); err != nil {
-		return
+		offset += int64(len(line))
 	}
 
 	return offset, nil
