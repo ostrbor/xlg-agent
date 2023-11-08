@@ -88,8 +88,9 @@ func forward(dir string) {
 		end, err := process(filepath, start, send)
 		if err != nil {
 			panic(err)
+		} else {
+			cache[filepath] = end
 		}
-		cache[filepath] = end
 	}
 }
 
@@ -131,25 +132,23 @@ func process(filePath string, start int64, handleLine func([]byte) error) (offse
 	// prefer bufio.Reader over bufio.Scanner because Scanner returns last line even if it doesn't end with newline.
 	rd := bufio.NewReader(fd)
 	offset = start
-	done := false
-	for !done {
+	for {
 		line, err := rd.ReadBytes('\n')
 		if err != nil {
 			if err == io.EOF {
-				done = true
-				continue
+				break
 			} else {
-				return offset, err
+				return 0, err
 			}
 		}
 		if len(line) > 0 && line[0] == '-' {
 			if err = handleLine(line); err != nil {
-				return offset, err
+				return 0, err
 			}
 			// mark line as successfully processed
 			_, err = fd.WriteAt([]byte{'+'}, offset)
 			if err != nil {
-				return offset, err
+				return 0, err
 			}
 		}
 		offset += int64(len(line))
