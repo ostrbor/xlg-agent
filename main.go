@@ -85,6 +85,13 @@ func forward(dir string) {
 	for _, file := range logFiles {
 		filepath := path.Join(dir, file)
 		start := cache[filepath]
+		s, err := os.Stat(filepath)
+		if err != nil {
+			panic(err)
+		}
+		if start == s.Size() {
+			continue
+		}
 		end, err := process(filepath, start, send)
 		if err != nil {
 			panic(err)
