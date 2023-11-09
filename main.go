@@ -21,6 +21,11 @@ var (
 	rootDir        = flag.String("dir", "", "root directory for log subdirectories")
 )
 
+const (
+	sentMark    = '+'
+	notSentMark = '-'
+)
+
 // /rootDir/logDir/logFile
 func main() {
 	flag.Parse()
@@ -92,7 +97,7 @@ func forward(dir string) {
 		if start == s.Size() {
 			continue
 		}
-		end, err := process(filepath, start, send)
+		end, err := handleLines(filepath, start, send)
 		if err != nil {
 			panic(err)
 		} else {
@@ -120,8 +125,10 @@ func send(json []byte) error {
 	return nil
 }
 
-// todo use start offset to compare with file size to avoid reading file
-func process(filePath string, start int64, handleLine func([]byte) error) (offset int64, err error) {
+// handleLines reads a file line by line, processes logs if a line starts with the '-' character, and marks the line as sent by replacing '-' with '+'.
+// It returns the offset of the next byte to be processed, which corresponds to the beginning of the line following the last processed line.
+// To resume reading from a specific offset and avoid starting from the beginning each time, it accepts the 'resumeOffset' as an argument.
+func handleLines(filePath string, resumeOffset int64, send func([]byte) error) (nextLineOffset int64, err error) {
 	fd, err := os.OpenFile(filePath, os.O_RDWR, os.ModePerm)
 	if err != nil {
 		return
@@ -132,13 +139,13 @@ func process(filePath string, start int64, handleLine func([]byte) error) (offse
 			panic(closeErr)
 		}
 	}()
-	if _, err = fd.Seek(start, io.SeekStart); err != nil {
+	if _, err = fd.Seek(resumeOffset, io.SeekStart); err != nil {
 		return
 	}
 
 	// prefer bufio.Reader over bufio.Scanner because Scanner returns last line even if it doesn't end with newline.
 	rd := bufio.NewReader(fd)
-	offset = start
+	nextLineOffset = resumeOffset
 	for {
 		line, err := rd.ReadBytes('\n')
 		if err != nil {
@@ -148,18 +155,17 @@ func process(filePath string, start int64, handleLine func([]byte) error) (offse
 				return 0, err
 			}
 		}
-		if len(line) > 0 && line[0] == '-' {
-			if err = handleLine(line); err != nil {
+		if len(line) > 0 && line[0] == notSentMark {
+			if err = send(line); err != nil {
 				return 0, err
 			}
-			// mark line as successfully processed
-			_, err = fd.WriteAt([]byte{'+'}, offset)
+			_, err = fd.WriteAt([]byte{sentMark}, nextLineOffset)
 			if err != nil {
 				return 0, err
 			}
 		}
-		offset += int64(len(line))
+		nextLineOffset += int64(len(line))
 	}
 
-	return offset, nil
+	return nextLineOffset, nil
 }
