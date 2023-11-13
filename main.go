@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"github.com/ostrbor/xlg"
 	"io"
 	"net/http"
 	"os"
@@ -22,8 +23,7 @@ var (
 )
 
 const (
-	sentMark    = '+'
-	notSentMark = '-'
+	sentMark = '+'
 )
 
 // /rootDir/logDir/logFile
@@ -80,7 +80,7 @@ func forward(dir string) {
 	var logFiles []string
 	for _, file := range files {
 		name := file.Name()
-		if !strings.HasSuffix(name, ".log") {
+		if !strings.HasSuffix(name, xlg.FileSuffix) {
 			continue
 		}
 		logFiles = append(logFiles, name)
@@ -112,7 +112,6 @@ func send(json []byte) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+collectorToken)
 	resp, err := c.Do(req)
 	if err != nil {
@@ -152,16 +151,16 @@ func handleLines(filePath string, resumeOffset int64, send func([]byte) error) (
 			if err == io.EOF {
 				break
 			} else {
-				return 0, err
+				return nextLineOffset, err
 			}
 		}
-		if len(line) > 0 && line[0] == notSentMark {
+		if len(line) > 0 && line[0] == xlg.NotSentMark {
 			if err = send(line); err != nil {
-				return 0, err
+				return nextLineOffset, err
 			}
 			_, err = fd.WriteAt([]byte{sentMark}, nextLineOffset)
 			if err != nil {
-				return 0, err
+				return nextLineOffset, err
 			}
 		}
 		nextLineOffset += int64(len(line))
