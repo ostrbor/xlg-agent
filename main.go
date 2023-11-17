@@ -11,7 +11,6 @@ import (
 	"os"
 	"path"
 	"sort"
-	"strings"
 	"time"
 )
 
@@ -80,7 +79,7 @@ func forward(dir string) {
 	var logFiles []string
 	for _, file := range files {
 		name := file.Name()
-		if !strings.HasSuffix(name, xlg.FileSuffix) {
+		if !isLogFile(name, xlg.FileFormat) {
 			continue
 		}
 		logFiles = append(logFiles, name)
@@ -104,6 +103,14 @@ func forward(dir string) {
 			cache[filepath] = end
 		}
 	}
+}
+
+func isLogFile(fileName, fileFormat string) bool {
+	_, err := time.Parse(fileFormat, fileName)
+	if err != nil {
+		return false
+	}
+	return true
 }
 
 func send(json []byte) error {
