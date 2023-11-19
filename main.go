@@ -10,15 +10,18 @@ import (
 	"net/http"
 	"os"
 	"path"
-	"sort"
+	"slices"
 	"time"
 )
 
 var (
 	collectorUrl   = os.Getenv("COLLECTOR_URL")
 	collectorToken = os.Getenv("COLLECTOR_TOKEN")
-	cache          = make(map[string]int64)
-	rootDir        = flag.String("dir", "", "root directory for log subdirectories")
+
+	// todo memory leak as cache grows indefinitely
+	cache = make(map[string]int64)
+
+	rootDir = flag.String("dir", "", "root directory for log subdirectories")
 )
 
 const (
@@ -47,62 +50,72 @@ func main() {
 	}
 	// todo print env vars to stdout
 
-	rootEntries, err := os.ReadDir(*rootDir)
-	if err != nil {
-		panic(err)
-	}
-
 	for {
+		rootEntries, err := os.ReadDir(*rootDir)
+		if err != nil {
+			panic(err)
+		}
+
 		for _, entry := range rootEntries {
 			if !entry.IsDir() {
 				continue
 			}
 			p := path.Join(*rootDir, entry.Name())
-			forward(p)
+			files, err := os.ReadDir(p)
+			if err != nil {
+				panic(err)
+			}
+			logs := filtered(files)
+			slices.Sort(logs)
+			forward(logs, p)
 		}
 		time.Sleep(5 * time.Second)
 	}
 }
 
 // forward logs from dirs in rootDir to collector
-func forward(dir string) {
+func forward(logFiles []string, baseDir string) {
 	// read content in rootDir
 	// sort all files
 	// find file to send logs
 	// send logs
 	// update file
-	files, err := os.ReadDir(dir)
-	if err != nil {
-		panic(err)
-	}
-
-	var logFiles []string
-	for _, file := range files {
-		name := file.Name()
-		if !isLogFile(name, xlg.FileFormat) {
-			continue
-		}
-		logFiles = append(logFiles, name)
-	}
-	sort.Strings(logFiles)
-
 	for _, file := range logFiles {
-		filepath := path.Join(dir, file)
-		start := cache[filepath]
-		s, err := os.Stat(filepath)
-		if err != nil {
-			panic(err)
-		}
-		if start == s.Size() {
+		filepath := path.Join(baseDir, file)
+		nextOf := cache[filepath]
+		if !updated(filepath, nextOf) {
 			continue
 		}
-		end, err := handleLines(filepath, start, send)
+		end, err := handleLines(filepath, nextOf, send)
 		if err != nil {
 			panic(err)
 		} else {
 			cache[filepath] = end
 		}
 	}
+}
+
+func updated(filepath string, nextOf int64) bool {
+	s, err := os.Stat(filepath)
+	if err != nil {
+		panic(err)
+	}
+	if nextOf == s.Size() {
+		return false
+	}
+	return true
+}
+
+func filtered(files []os.DirEntry) []string {
+	names := make([]string, 0, len(files))
+	for _, file := range files {
+		n := file.Name()
+		if !isLogFile(n, xlg.FileFormat) {
+			continue
+		}
+		names = append(names, n)
+	}
+	return names
 }
 
 func isLogFile(fileName, fileFormat string) bool {
@@ -124,6 +137,7 @@ func send(json []byte) error {
 	if err != nil {
 		return err
 	}
+	// todo handle err
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
