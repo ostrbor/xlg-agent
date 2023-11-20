@@ -24,7 +24,7 @@ func Test_processFile(t *testing.T) {
 		noop := func(_ []byte) error {
 			return nil
 		}
-		offset, err := process(filePath, 0, noop)
+		offset, err := handleLines(filePath, 0, noop)
 		check(err)
 		if int(offset) != len(data) {
 			t.Error("unexpected number of bytes processed ", offset)
@@ -53,7 +53,7 @@ func Test_processFile(t *testing.T) {
 		noop := func(_ []byte) error {
 			return nil
 		}
-		offset, err := process(filePath, 0, noop)
+		offset, err := handleLines(filePath, 0, noop)
 		check(err)
 		if int(offset) != len(data) {
 			t.Error("unexpected number of bytes processed ", offset)
