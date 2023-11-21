@@ -51,52 +51,96 @@ func main() {
 	// todo print env vars to stdout
 
 	for {
-		rootEntries, err := os.ReadDir(*rootDir)
+		dirNames, err := subDirs(*rootDir)
 		if err != nil {
 			panic(err)
 		}
-
-		for _, entry := range rootEntries {
-			if !entry.IsDir() {
-				continue
-			}
-			p := path.Join(*rootDir, entry.Name())
-			files, err := os.ReadDir(p)
+		for _, name := range dirNames {
+			dirpath := path.Join(*rootDir, name)
+			entries, err := os.ReadDir(dirpath)
 			if err != nil {
 				panic(err)
 			}
-			logs := filtered(files)
-			slices.Sort(logs)
-			forward(logs, p)
+			// filenames and match both iterate same entries, not efficient but readable
+			fnames := filenames(entries)
+			logFiles := match(fnames, xlg.FileFormat)
+			slices.Sort(logFiles)
+			for _, lf := range logFiles {
+				filepath := path.Join(dirpath, lf)
+				handleFile(filepath)
+			}
 		}
 		time.Sleep(5 * time.Second)
 	}
 }
 
-// forward logs from dirs in rootDir to collector
-func forward(logFiles []string, baseDir string) {
+func filenames(entries []os.DirEntry) (res []string) {
+	res = make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		res = append(res, entry.Name())
+	}
+	return res
+}
+
+func match(filenames []string, format string) (res []string) {
+	res = make([]string, 0, len(filenames))
+	for _, n := range filenames {
+		if !isLogFile(n, format) {
+			continue
+		}
+		res = append(res, n)
+	}
+	return res
+}
+
+func subDirs(dir string) (names []string, err error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	names = make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		names = append(names, entry.Name())
+	}
+	return names, nil
+}
+
+// handleFile logs from dirs in rootDir to collector
+func handleFile(filepath string) {
 	// read content in rootDir
 	// sort all files
 	// find file to send logs
 	// send logs
 	// update file
-	for _, file := range logFiles {
-		filepath := path.Join(baseDir, file)
-		nextOf := cache[filepath]
-		if !updated(filepath, nextOf) {
-			continue
-		}
-		end, err := handleLines(filepath, nextOf, send)
-		if err != nil {
-			panic(err)
-		} else {
-			cache[filepath] = end
-		}
+	fd, err := os.OpenFile(filepath, os.O_RDWR, os.ModePerm)
+	if err != nil {
+		return
 	}
+	defer func() {
+		if closeErr := fd.Close(); closeErr != nil {
+			// log err
+			panic(closeErr)
+		}
+	}()
+	nextOffset := cache[filepath]
+	if !updated(fd, nextOffset) {
+		return
+	}
+	end, err := handleLines(fd, nextOffset, send)
+	if err != nil {
+		panic(err)
+	}
+	cache[filepath] = end
 }
 
-func updated(filepath string, nextOf int64) bool {
-	s, err := os.Stat(filepath)
+func updated(f *os.File, nextOf int64) bool {
+	s, err := f.Stat()
 	if err != nil {
 		panic(err)
 	}
@@ -106,10 +150,13 @@ func updated(filepath string, nextOf int64) bool {
 	return true
 }
 
-func filtered(files []os.DirEntry) []string {
-	names := make([]string, 0, len(files))
-	for _, file := range files {
-		n := file.Name()
+func filterLogs(entries []os.DirEntry) []string {
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		n := entry.Name()
 		if !isLogFile(n, xlg.FileFormat) {
 			continue
 		}
@@ -148,21 +195,10 @@ func send(json []byte) error {
 // handleLines reads a file line by line, processes logs if a line starts with the '-' character, and marks the line as sent by replacing '-' with '+'.
 // It returns the offset of the next byte to be processed, which corresponds to the beginning of the line following the last processed line.
 // To resume reading from a specific offset and avoid starting from the beginning each time, it accepts the 'resumeOffset' as an argument.
-func handleLines(filePath string, resumeOffset int64, send func([]byte) error) (nextLineOffset int64, err error) {
-	fd, err := os.OpenFile(filePath, os.O_RDWR, os.ModePerm)
-	if err != nil {
-		return
-	}
-	defer func() {
-		if closeErr := fd.Close(); closeErr != nil {
-			// log err
-			panic(closeErr)
-		}
-	}()
+func handleLines(fd *os.File, resumeOffset int64, send func([]byte) error) (nextLineOffset int64, err error) {
 	if _, err = fd.Seek(resumeOffset, io.SeekStart); err != nil {
 		return
 	}
-
 	// prefer bufio.Reader over bufio.Scanner because Scanner returns last line even if it doesn't end with newline.
 	rd := bufio.NewReader(fd)
 	nextLineOffset = resumeOffset
