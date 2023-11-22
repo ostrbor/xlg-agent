@@ -51,27 +51,37 @@ func main() {
 	// todo print env vars to stdout
 
 	for {
-		dirNames, err := subDirs(*rootDir)
-		if err != nil {
-			panic(err)
-		}
-		for _, name := range dirNames {
-			dirpath := path.Join(*rootDir, name)
-			entries, err := os.ReadDir(dirpath)
-			if err != nil {
-				panic(err)
-			}
-			// filenames and match both iterate same entries, not efficient but readable
-			fnames := filenames(entries)
-			logFiles := match(fnames, xlg.FileFormat)
-			slices.Sort(logFiles)
-			for _, lf := range logFiles {
-				filepath := path.Join(dirpath, lf)
-				handleFile(filepath)
+		// todo each time iteration of map has different order
+		for dir, files := range searchLogs(*rootDir) {
+			for _, f := range files {
+				handleFile(path.Join(dir, f))
+				// todo log rotation, move old file to archive
 			}
 		}
 		time.Sleep(5 * time.Second)
 	}
+}
+
+// res key is directory path, value is slice of log file names
+func searchLogs(rootDir string) (res map[string][]string) {
+	dirNames, err := subDirs(rootDir)
+	if err != nil {
+		panic(err)
+	}
+	res = make(map[string][]string)
+	for _, name := range dirNames {
+		dirpath := path.Join(rootDir, name)
+		entries, err := os.ReadDir(dirpath)
+		if err != nil {
+			panic(err)
+		}
+		// filenames and match both iterate same entries, not efficient but readable
+		fnames := filenames(entries)
+		logFiles := match(fnames, xlg.FileFormat)
+		slices.Sort(logFiles)
+		res[dirpath] = logFiles
+	}
+	return res
 }
 
 func filenames(entries []os.DirEntry) (res []string) {
